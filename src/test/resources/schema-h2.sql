@@ -3,6 +3,42 @@ DROP TABLE IF EXISTS t_adr_report_row;
 DROP TABLE IF EXISTS t_adr_check_booklet;
 DROP TABLE IF EXISTS t_adr_check_period;
 DROP TABLE IF EXISTS t_adr_term_card;
+DROP TABLE IF EXISTS t_adr_case_flow;
+DROP TABLE IF EXISTS t_adr_org_arch;
+
+CREATE TABLE t_adr_case_flow (
+  id bigint PRIMARY KEY,
+  biz_no varchar(64),
+  stage int,
+  status int,
+  content varchar(255),
+  last_action varchar(64),
+  del_flag int DEFAULT 0,
+  create_by varchar(64),
+  create_time datetime,
+  update_by varchar(64),
+  update_time datetime,
+  remark varchar(500)
+);
+CREATE INDEX idx_caseflow_bill ON t_adr_case_flow (biz_no, del_flag);
+
+CREATE TABLE t_adr_org_arch (
+  id bigint PRIMARY KEY,
+  site_no varchar(64),
+  site_name varchar(128),
+  site_type varchar(32),
+  road_name varchar(128),
+  th1_max decimal(12,2),
+  th2_max decimal(12,2),
+  th3_max decimal(12,2),
+  status int,
+  del_flag int DEFAULT 0,
+  create_by varchar(64),
+  create_time datetime,
+  update_by varchar(64),
+  update_time datetime,
+  remark varchar(500)
+);
 
 CREATE TABLE t_adr_term_card (
   id bigint PRIMARY KEY,
