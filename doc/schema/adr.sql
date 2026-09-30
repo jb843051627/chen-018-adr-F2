@@ -5,18 +5,48 @@
 CREATE TABLE IF NOT EXISTS t_adr_case_flow (
   id bigint NOT NULL COMMENT '主键',
   biz_no varchar(64) DEFAULT NULL COMMENT '报告处置单号',
-  stage int DEFAULT NULL COMMENT '当前档次 0..3（收单/初核/评价/已结案）',
-  status int DEFAULT NULL COMMENT '处置落点 0未起 1在办 2已作废',
-  content varchar(255) DEFAULT NULL COMMENT '处置记事',
+  report_no varchar(64) DEFAULT NULL COMMENT '报告卡代号(只认追溯码,不拿单位名号对门)',
+  site_no varchar(64) DEFAULT NULL COMMENT '报告单位底册代号',
+  period_no varchar(32) DEFAULT NULL COMMENT '本单所涉核对期次号(查这家单位那一期压没压着未结事务)',
+  change_fields varchar(255) DEFAULT NULL COMMENT '这一版动了哪几栏(收单三要件之一,逗号分隔)',
+  version_no int NOT NULL DEFAULT 1 COMMENT '同一份报告名下的版次序(作废单也占序)',
+  layer int NOT NULL DEFAULT 0 COMMENT '版层 0现行名录 1历史层(新版进现行那一刻旧版自动沉入)',
+  stage int DEFAULT NULL COMMENT '当前档次 0..3（收单/初核/评价/已结案）;纸面档号,权威档号照记载重算',
+  status int DEFAULT NULL COMMENT '处置落点 0未起 1在办(已结案时stage=3) 2已作废 3已止步',
+  content varchar(255) DEFAULT NULL COMMENT '处置记事(随各格进门那句走,不许另补)',
   last_action varchar(64) DEFAULT NULL COMMENT '最近一次过口动作',
-  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  receipt_no varchar(64) DEFAULT NULL COMMENT '对外回执号(已结案那格同出)',
+  finalized_time datetime DEFAULT NULL COMMENT '走完一趟(已结案)时刻',
+  terminal_time datetime DEFAULT NULL COMMENT '止步/作废时刻',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常(废单也留着,年底按废单查当年口径,不许删)',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  KEY idx_report_layer (report_no, layer, status, del_flag),
+  KEY idx_active (report_no, status, stage, del_flag)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='报告处置单';
+
+-- 处置记载：一笔进门一句，只许追加不许改删；收回一格时被收回那格的进门记载沉到 layer=1。
+-- 档号不看纸面、不看承办人心记，只数这张表：沿 prev_hash 链从收单重放，几格进门就是几格。
+CREATE TABLE IF NOT EXISTS t_adr_case_note (
+  id bigint NOT NULL COMMENT '主键',
+  flow_id bigint NOT NULL COMMENT '所属处置单(=t_adr_case_flow.id)',
+  seq int NOT NULL COMMENT '单内次序(照落笔记载先后,此后不可改)',
+  stage int NOT NULL COMMENT '本笔所指档 0收单 1初核 2评价 3已结案(收回/止步/作废记当下所在档)',
+  action varchar(16) NOT NULL COMMENT '过口动作 ENTER进门 WITHDRAW收回一格 STOP止步 VOID作废',
+  layer int NOT NULL DEFAULT 0 COMMENT '记载层 0本屏 1已沉底(被收回的旧记,与后补那批不同屏并列)',
+  content varchar(500) DEFAULT NULL COMMENT '本格落的那一句(同格第二遍提交仍只认头一遍这句)',
+  operator varchar(64) DEFAULT NULL COMMENT '落笔记办人(初核须与收单不是同一双手)',
+  prev_hash char(32) DEFAULT NULL COMMENT '上一笔指纹(链条断口即事后手补)',
+  hash char(32) DEFAULT NULL COMMENT '本笔指纹 md5(seq|stage|action|layer|content|operator|prev_hash)',
+  create_time datetime DEFAULT NULL COMMENT '落笔记载时刻',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_flow_seq (flow_id, seq),
+  KEY idx_flow_layer (flow_id, layer)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='报告处置单处置记载(只追加)';
 
 CREATE TABLE IF NOT EXISTS t_adr_cycle_task (
   id bigint NOT NULL COMMENT '主键',

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('报告处置单流转台账')"/>
+</head>
+<body class="pear-container">
+<div class="layui-card">
+    <div class="layui-card-body">
+        <blockquote class="layui-elem-quote layui-quote-nm">
+            口径要改先立处置单，口头与纸面都不作数。四格（收单→初核→评价→已结案）只能一格格推；
+            停在哪一档、能不能过下一档，全凭服务层盘算给回——屏上写的档号不作数。
+        </blockquote>
+        <table id="case-flow-table" lay-filter="case-flow-table"></table>
+    </div>
+</div>
+
+<script type="text/html" id="flow-toolbar">
+    <button shiro:hasPermission="adrCaseFlow:open" class="pear-btn pear-btn-primary pear-btn-md" lay-event="open">
+        <i class="layui-icon layui-icon-add-1"></i>
+        立处置单
+    </button>
+</script>
+
+<script type="text/html" id="flow-bar">
+    <button shiro:hasPermission="adrCaseFlow:advance" class="pear-btn pear-btn-primary pear-btn-sm" lay-event="step">过口</button>
+    <button shiro:hasPermission="adrCaseFlow:view" class="pear-btn pear-btn-normal pear-btn-sm" lay-event="snapshot">盘算</button>
+    <button shiro:hasPermission="adrCaseFlow:view" class="pear-btn pear-btn-warming pear-btn-sm" lay-event="trace">倒读</button>
+</script>
+
+<script type="text/html" id="layer-tpl">
+    {{# if(d.layer === 1){ }}<span class="layui-badge layui-bg-gray">历史层</span>{{# } else { }}<span class="layui-badge layui-bg-blue">现行名录</span>{{# } }}
+</script>
+
+<script type="text/html" id="status-tpl">
+    {{# if(d.status === 2){ }}<span class="layui-badge">已作废</span>
+    {{# } else if(d.status === 3){ }}<span class="layui-badge layui-bg-gray">已止步</span>
+    {{# } else if(d.stage === 3){ }}<span class="layui-badge layui-bg-green">已结案</span>
+    {{# } else { }}<span class="layui-badge layui-bg-orange">在办</span>{{# } }}
+</script>
+
+<th:block th:include="include :: footer"/>
+<script>
+    layui.use(['table', 'jquery', 'layer', 'form'], function () {
+        let table = layui.table;
+        let $ = layui.jquery;
+        let layer = layui.layer;
+        let form = layui.form;
+        let MODULE_PATH = rootPath + '/adrCaseFlow';
+
+        table.render({
+            elem: '#case-flow-table',
+            url: MODULE_PATH + '/list',
+            page: true,
+            method: 'get',
+            skin: 'line',
+            toolbar: '#flow-toolbar',
+            defaultToolbar: ['refresh', 'filter', 'print', 'exports'],
+            cols: [[
+                {title: 'ID', field: 'id', align: 'center', hide: true},
+                {title: '处置单号', field: 'bizNo', align: 'center', width: 160},
+                {title: '报告卡代号', field: 'reportNo', align: 'center', width: 140},
+                {title: '底册代号', field: 'siteNo', align: 'center', width: 110},
+                {title: '期次', field: 'periodNo', align: 'center', width: 100},
+                {title: '版次', field: 'versionNo', align: 'center', width: 70},
+                {title: '版层', toolbar: '#layer-tpl', align: 'center', width: 100},
+                {title: '落点', toolbar: '#status-tpl', align: 'center', width: 100},
+                {title: '回执号', field: 'receiptNo', align: 'center', width: 160},
+                {title: '动了哪几栏', field: 'changeFields', align: 'left'},
+                {title: '立单时间', field: 'createTime', align: 'center', width: 170},
+                {title: '操作', toolbar: '#flow-bar', align: 'center', width: 210, fixed: 'right'}
+            ]]
+        });
+
+        table.on('toolbar(case-flow-table)', function (obj) {
+            if (obj.event === 'open') {
+                openDialog();
+            }
+        });
+
+        table.on('tool(case-flow-table)', function (obj) {
+            if (obj.event === 'step') {
+                stepDialog(obj.data);
+            } else if (obj.event === 'snapshot') {
+                showSnapshot(obj.data.id);
+            } else if (obj.event === 'trace') {
+                showTrace(obj.data.id);
+            }
+        });
+
+        // —— 立单：收单三要件少一样进不了门 ——
+        function openDialog() {
+            layer.open({
+                type: 1, title: '立处置单（收单进门）', area: ['520px', '430px'],
+                content:
+                    '<form class="layui-form" style="padding:20px" id="open-form">' +
+                    field('报告卡代号', 'reportNo', '追溯码，只认码不认单位名号') +
+                    field('报告单位底册代号', 'siteNo', '如 YF00') +
+                    field('所涉核对期次', 'periodNo', '如 2026Q1') +
+                    field('动了哪几栏', 'changeFields', '多栏用逗号隔开') +
+                    textarea('收单记事', 'content') +
+                    '<div class="layui-form-item"><div class="layui-input-block">' +
+                    '<button class="pear-btn pear-btn-primary" lay-submit lay-filter="open-submit">立单</button></div></div>' +
+                    '</form>',
+                success: function () {
+                    form.render();
+                    form.on('submit(open-submit)', function (data) {
+                        $.post(MODULE_PATH + '/open', data.field, function (res) {
+                            if (res.code === 200) {
+                                layer.closeAll();
+                                layer.msg(res.msg || '已收单', {icon: 1});
+                                table.reload('case-flow-table');
+                            } else {
+                                layer.msg(res.msg, {icon: 2});
+                            }
+                        });
+                        return false;
+                    });
+                }
+            });
+        }
+
+        // —— 唯一的过口把手：NEXT/WITHDRAW/STOP/VOID 都从这一个口子进 ——
+        function stepDialog(row) {
+            $.get(MODULE_PATH + '/snapshot', {id: row.id}, function (res) {
+                let d = res.data;
+                let radios = '';
+                radios += radio('NEXT', '推进到紧邻的下一格（' + nextLabel(d.stage) + '）', d.canAdvance);
+                radios += radio('WITHDRAW', '收回一格（旧记沉底）', d.canWithdraw);
+                radios += radio('STOP', '这一版到此为止', d.canStop);
+                radios += radio('VOID', '作废（记事冻结、整张不删）', d.canVoid);
+                layer.open({
+                    type: 1, title: '过口——单号 ' + row.bizNo + '（权威档：' + d.stageLabel + '）', area: ['600px', '500px'],
+                    content:
+                        '<form class="layui-form" style="padding:20px" id="step-form">' +
+                        '<input type="hidden" name="fromSeq" value="' + (d.headSeq == null ? '' : d.headSeq) + '">' +
+                        '<div class="layui-form-item"><label class="layui-form-label">走法</label><div class="layui-input-block">' +
+                        radios +
+                        (d.blockReason ? '<div style="color:#FF5722;margin-top:8px">下一格进不去：' + d.blockReason + '</div>' : '') +
+                        '</div></div>' +
+                        textarea('本格落的那句', 'content') +
+                        '<div class="layui-form-item"><div class="layui-input-block">' +
+                        '<button class="pear-btn pear-btn-primary" lay-submit lay-filter="step-submit">过口</button></div></div>' +
+                        '</form>',
+                    success: function () {
+                        form.render();
+                        form.on('submit(step-submit)', function (data) {
+                            let action = data.field.action;
+                            if (!action) { layer.msg('先挑一种走法', {icon: 2}); return false; }
+                            $.post(MODULE_PATH + '/advance', {
+                                id: row.id, action: action,
+                                content: data.field.content, fromSeq: data.field.fromSeq
+                            }, function (r2) {
+                                if (r2.code === 200) {
+                                    layer.closeAll();
+                                    layer.msg(r2.msg, {icon: 1});
+                                    table.reload('case-flow-table');
+                                } else {
+                                    // 被拒不落记事；把服务层那句原话摆出来
+                                    layer.alert(r2.msg, {icon: 2, title: '这一次没过成'});
+                                }
+                            });
+                            return false;
+                        });
+                    }
+                });
+            });
+        }
+
+        function showSnapshot(id) {
+            $.get(MODULE_PATH + '/snapshot', {id: id}, function (res) {
+                let d = res.data;
+                let html = '<div style="padding:18px;line-height:1.9">' +
+                    '<p><b>处置单号：</b>' + d.flow.bizNo + '（第 ' + d.flow.versionNo + ' 版）</p>' +
+                    '<p><b>权威档号：</b>' + d.stage + ' ' + d.stageLabel +
+                    '　<span style="color:#999">（照处置记载重算，纸面档号不作数）</span></p>' +
+                    '<p><b>落点：</b>' + d.statusLabel + (d.finished ? '　<b>已走完一趟</b>' : '') + '</p>' +
+                    '<p><b>能不能过下一格：</b>' + (d.canAdvance ? '能' : '不能——' + d.blockReason) + '</p>' +
+                    (d.receiptNo ? '<p><b>对外回执：</b>' + d.receiptNo + '</p>' : '') +
+                    '<p><b>本屏记载</b>（沉底旧记不与后补那批并列）：</p>' +
+                    notesTable(d.screenNotes) +
+                    '</div>';
+                layer.open({type: 1, title: '盘算', area: ['720px', '520px'], content: html});
+            });
+        }
+
+        function showTrace(id) {
+            $.get(MODULE_PATH + '/trace', {id: id}, function (res) {
+                let d = res.data;
+                let html = '<div style="padding:18px;line-height:1.9">' +
+                    '<p><b>走到头：</b>' + (d.finished ? '是' : '否（没走到头不在判废之列）') + '</p>' +
+                    '<p><b>重放档号：</b>' + d.stage + '　<b>链上记载：</b>' + d.chainCount + ' 笔</p>' +
+                    '<p><b>判定：</b>' + (d.valid
+                        ? '<span style="color:#5FB878">这一单走成了——笔笔与当日那一屏对得拢</span>'
+                        : '<span style="color:#FF5722">这一单没走成</span>') + '</p>' +
+                    (d.problems.length ? '<p><b>见着的毛病：</b></p><ul><li>' + d.problems.join('</li><li>') + '</li></ul>' : '') +
+                    '</div>';
+                layer.open({type: 1, title: '倒读', area: ['720px', '480px'], content: html});
+            });
+        }
+
+        function nextLabel(stage) {
+            return ['初核', '评价', '已结案', '已到头'][stage + 1] || '到头了';
+        }
+
+        function field(label, name, ph) {
+            return '<div class="layui-form-item"><label class="layui-form-label">' + label + '</label>' +
+                '<div class="layui-input-block"><input type="text" name="' + name + '" required placeholder="' + ph +
+                '" class="layui-input"></div></div>';
+        }
+
+        function textarea(label, name) {
+            return '<div class="layui-form-item"><label class="layui-form-label">' + label + '</label>' +
+                '<div class="layui-input-block"><textarea name="' + name + '" class="layui-textarea"></textarea></div></div>';
+        }
+
+        function radio(val, title, enabled) {
+            return '<input type="radio" name="action" value="' + val + '" title="' + title + '"' +
+                (enabled ? '' : ' disabled') + '>';
+        }
+
+        function notesTable(notes) {
+            if (!notes || !notes.length) {
+                return '<div style="color:#999">（无）</div>';
+            }
+            let rows = notes.map(function (n) {
+                return '<tr><td>' + n.seq + '</td><td>' + n.stage + '</td><td>' + n.action +
+                    '</td><td>' + (n.content == null ? '' : n.content) +
+                    '</td><td>' + (n.operator == null ? '' : n.operator) + '</td></tr>';
+            }).join('');
+            return '<table class="layui-table" style="margin-top:6px"><thead><tr>' +
+                '<th>次序</th><th>档</th><th>动作</th><th>记事</th><th>承办人</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table>';
+        }
+    });
+</script>
+</body>
+</html>
